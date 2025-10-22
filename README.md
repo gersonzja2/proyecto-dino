@@ -1,2 +1,3 @@
 # proyecto-dino
-recreacion del juego del dinosaurio de google
+## Recreacion del juego del dinosaurio de google
+pequeños avances
