@@ -1,5 +1,6 @@
 # game_logic.py
 import random
+import json
 
 class Dino:
     def __init__(self, x=50, ground_y=300):
@@ -16,6 +17,8 @@ class Dino:
         self.anim_timer = 0
         self.anim_frame = 0
         self.just_landed = False
+        self.powerup_active = False
+        self.powerup_timer = 0
         
     def jump(self):
         if not self.jumping:
@@ -26,6 +29,12 @@ class Dino:
         self.ducking = ducking
         
     def update(self):
+        # Actualizar power-up
+        if self.powerup_active:
+            self.powerup_timer -= 1
+            if self.powerup_timer <= 0:
+                self.powerup_active = False
+
         if self.jumping:
             self.vel_y += self.gravity
             self.y += self.vel_y
@@ -60,6 +69,10 @@ class Dino:
             'width': self.width,
             'height': self.height
         }
+
+    def activate_powerup(self, duration=300): # 5 segundos a 60 FPS
+        self.powerup_active = True
+        self.powerup_timer = duration
     
 
 class Obstacle:
@@ -67,6 +80,7 @@ class Obstacle:
         self.x = x
         self.type = obs_type
         self.speed = speed
+        self.destroyed = False
         
         if 'cactus' in obs_type:
             self.width = 20
@@ -103,6 +117,10 @@ class Obstacle:
                 self.anim_frame = (self.anim_frame + 1) % 2
                 self.anim_timer = 0
         
+        if self.destroyed:
+            # Los fragmentos caen y se desvanecen
+            self.y += 2
+        
     def get_rect(self):
         return {
             'x': self.x,
@@ -112,7 +130,30 @@ class Obstacle:
         }
     
     def off_screen(self):
-        return self.x < -50
+        return self.x < -50 or self.y > 500 # También se elimina si cae fuera de la pantalla
+
+    def destroy(self):
+        if 'cactus' in self.type:
+            self.destroyed = True
+            self.speed = 0 # Detener el movimiento horizontal
+
+
+class PowerUp:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.width = 20
+        self.height = 20
+        self.speed = 8
+
+    def update(self):
+        self.x -= self.speed
+
+    def get_rect(self):
+        return {'x': self.x, 'y': self.y, 'width': self.width, 'height': self.height}
+
+    def off_screen(self):
+        return self.x < -self.width
 
 
 class Cloud:
@@ -175,7 +216,7 @@ class GameEngine:
         self.ground_y = height - 100
         self.speed = 8
         self.high_score = 0
-        self.highscore_file = "highscore.txt"
+        self.data_file = "game_data.json"
         self.speed_increase_interval = 10 # Aumentar velocidad cada 10 puntos
         self.next_speed_increase_score = self.speed_increase_interval
         
@@ -185,9 +226,11 @@ class GameEngine:
         self.ground = Ground(height - 40, speed=self.speed)
         self.obstacles = []
         self.clouds = []
+        self.powerups = []
         self.particles = []
         self.stars = [Star(0, 0, width, height) for _ in range(50)] # Generar 50 estrellas
         self.score = 0
+        self.started = False
         self.game_over = False
         self.paused = False
         self.new_high_score_achieved = False
@@ -196,45 +239,54 @@ class GameEngine:
         self.time_of_day = 0
         self.cycle_duration = 4800 # 80 segundos a 60 FPS
 
-        self.load_high_score()
+        self.load_data()
         
         self.spawn_timer = 0
         self.cloud_spawn_timer = 0
         self.cloud_spawn_interval = random.randint(120, 240)
         self.spawn_interval = random.randint(60, 120)
 
-    def load_high_score(self):
-        """Carga la puntuación más alta desde un archivo."""
+    def load_data(self):
+        """Carga datos del juego desde un archivo JSON."""
         try:
-            with open(self.highscore_file, 'r') as f:
-                self.high_score = int(f.read())
-        except (FileNotFoundError, ValueError):
+            with open(self.data_file, 'r') as f:
+                data = json.load(f)
+                self.high_score = data.get("high_score", 0)
+        except (FileNotFoundError, json.JSONDecodeError):
             self.high_score = 0
 
-    def save_high_score(self):
-        """Guarda la puntuación más alta en un archivo."""
-        with open(self.highscore_file, 'w') as f:
-            f.write(str(self.high_score))
+    def save_data(self):
+        """Guarda datos del juego en un archivo JSON."""
+        data = {
+            "high_score": self.high_score
+        }
+        with open(self.data_file, 'w') as f:
+            json.dump(data, f, indent=4)
         
     def toggle_pause(self):
         """Activa o desactiva la pausa del juego."""
         if not self.game_over:
             self.paused = not self.paused
 
+    def start_game(self):
+        if not self.started:
+            self.started = True
+
     def handle_jump(self):
-        if not self.game_over and not self.paused:
+        if self.started and not self.game_over and not self.paused:
             if self.sounds.get('jump') and not self.dino.jumping:
                 self.sounds['jump'].play()
             self.dino.jump()
             
     def handle_duck(self, ducking):
-        if not self.game_over and not self.paused:
+        if self.started and not self.game_over and not self.paused:
             self.dino.duck(ducking)
             
     def restart(self):
         """Reinicia el estado del juego."""
         new_game = GameEngine(self.width, self.height, self.sounds)
         new_game.high_score = self.high_score # Mantener la puntuación alta
+        new_game.start_game() # El juego reiniciado comienza inmediatamente
         self.dino = new_game.dino
         self.ground = new_game.ground
         self.obstacles = new_game.obstacles
@@ -255,7 +307,7 @@ class GameEngine:
                 rect1['y'] + rect1['height'] > rect2['y'])
         
     def update(self):
-        if self.game_over or self.paused:
+        if not self.started or self.game_over or self.paused:
             return
             
         # Actualizar ciclo día-noche
@@ -300,6 +352,18 @@ class GameEngine:
         for star in self.stars:
             star.update()
 
+        # Generar y actualizar power-ups
+        if random.random() < 0.001 and not self.dino.powerup_active: # Probabilidad baja de aparecer
+            self.powerups.append(PowerUp(self.width, self.ground_y + 40))
+        
+        for pu in self.powerups[:]:
+            pu.update()
+            if self.check_collision(self.dino.get_rect(), pu.get_rect()):
+                self.dino.activate_powerup()
+                self.powerups.remove(pu)
+            elif pu.off_screen():
+                self.powerups.remove(pu)
+
         # Generar obstáculos
         self.spawn_timer += 1
         if self.spawn_timer > self.spawn_interval:
@@ -325,7 +389,7 @@ class GameEngine:
         # Actualizar obstáculos
         for obs in self.obstacles[:]:
             obs.update()
-            if obs.off_screen():
+            if obs.off_screen() and not obs.destroyed:
                 self.obstacles.remove(obs)
                 if not self.game_over:
                     self.score += 1
@@ -339,16 +403,22 @@ class GameEngine:
                         self.next_speed_increase_score += self.speed_increase_interval
                 
             # Verificar colisión
-            if self.check_collision(self.dino.get_rect(), obs.get_rect()):
-                self.game_over = True
-                if self.score > self.high_score:
-                    self.high_score = self.score
-                    self.new_high_score_achieved = True
-                    if self.sounds.get('highscore'):
-                        self.sounds['highscore'].play()
-                    self.save_high_score()
-                if self.sounds.get('die'):
-                    self.sounds['die'].play()
+            if not obs.destroyed and self.check_collision(self.dino.get_rect(), obs.get_rect()):
+                if self.dino.powerup_active and 'cactus' in obs.type:
+                    obs.destroy()
+                    # Aquí podrías añadir un sonido de "romper"
+                else:
+                    self.game_over = True
+                    if self.score > self.high_score:
+                        self.high_score = self.score
+                        self.new_high_score_achieved = True
+                        if self.sounds.get('highscore'):
+                            self.sounds['highscore'].play()
+                    self.save_data()
+                    if self.sounds.get('die'):
+                        self.sounds['die'].play()
+            elif obs.destroyed and obs.off_screen():
+                self.obstacles.remove(obs)
                 
     def get_game_state(self):
         """Retorna el estado completo del juego para renderizado"""
@@ -357,10 +427,12 @@ class GameEngine:
             'ground': self.ground,
             'obstacles': self.obstacles,
             'clouds': self.clouds,
+            'powerups': self.powerups,
             'particles': self.particles,
             'stars': self.stars,
             'score': self.score,
             'high_score': self.high_score,
+            'started': self.started,
             'new_high_score_achieved': self.new_high_score_achieved,
             'paused': self.paused,
             'time_of_day': self.time_of_day,

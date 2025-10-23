@@ -58,27 +58,32 @@ class GameRenderer:
         
     def draw_dino(self, dino_state):
         """Dibuja el dinosaurio basado en su objeto de estado"""
+        dino_color = GRAY
+        # Cambiar color si el power-up está activo
+        if dino_state.powerup_active and dino_state.powerup_timer % 20 > 10:
+            dino_color = WHITE # Parpadeo
+
         x, y, width, height = dino_state.x, dino_state.y, dino_state.width, dino_state.height
         
         # El cuerpo del dinosaurio se dibuja con varios rectángulos para darle forma
         if dino_state.ducking and not dino_state.jumping:
             # Dinosaurio agachado
-            pygame.draw.rect(self.screen, GRAY, (x, y + 30, 55, 30)) # Cuerpo
-            pygame.draw.rect(self.screen, GRAY, (x + 55, y + 30, 20, 20)) # Cabeza
+            pygame.draw.rect(self.screen, dino_color, (x, y + 30, 55, 30)) # Cuerpo
+            pygame.draw.rect(self.screen, dino_color, (x + 55, y + 30, 20, 20)) # Cabeza
             pygame.draw.rect(self.screen, BLACK, (x + 65, y + 35, 5, 5)) # Ojo
         else:
             # Dinosaurio de pie
-            pygame.draw.rect(self.screen, GRAY, (x, y + 20, 30, 40)) # Cuerpo
-            pygame.draw.rect(self.screen, GRAY, (x - 10, y + 40, 10, 10)) # Cola
+            pygame.draw.rect(self.screen, dino_color, (x, y + 20, 30, 40)) # Cuerpo
+            pygame.draw.rect(self.screen, dino_color, (x - 10, y + 40, 10, 10)) # Cola
             # Animación de piernas
             if dino_state.anim_frame == 0:
-                pygame.draw.rect(self.screen, GRAY, (x + 5, y + 60, 10, 10)) # Pierna trasera
-                pygame.draw.rect(self.screen, GRAY, (x + 20, y + 55, 10, 15)) # Pierna delantera
+                pygame.draw.rect(self.screen, dino_color, (x + 5, y + 60, 10, 10)) # Pierna trasera
+                pygame.draw.rect(self.screen, dino_color, (x + 20, y + 55, 10, 15)) # Pierna delantera
             else:
-                pygame.draw.rect(self.screen, GRAY, (x + 5, y + 55, 10, 15)) # Pierna trasera
-                pygame.draw.rect(self.screen, GRAY, (x + 20, y + 60, 10, 10)) # Pierna delantera
-            pygame.draw.rect(self.screen, GRAY, (x + 20, y + 25, 10, 5)) # Brazo
-            pygame.draw.rect(self.screen, GRAY, (x + 25, y, 25, 25)) # Cabeza
+                pygame.draw.rect(self.screen, dino_color, (x + 5, y + 55, 10, 15)) # Pierna trasera
+                pygame.draw.rect(self.screen, dino_color, (x + 20, y + 60, 10, 10)) # Pierna delantera
+            pygame.draw.rect(self.screen, dino_color, (x + 20, y + 25, 10, 5)) # Brazo
+            pygame.draw.rect(self.screen, dino_color, (x + 25, y, 25, 25)) # Cabeza
             pygame.draw.rect(self.screen, BLACK, (x + 40, y + 5, 5, 5)) # Ojo
 
             
@@ -87,6 +92,13 @@ class GameRenderer:
         x, y, width, height = obs_state.x, obs_state.y, obs_state.width, obs_state.height
         obs_type = obs_state.type
         
+        if obs_state.destroyed:
+            # Dibuja fragmentos de cactus
+            pygame.draw.rect(self.screen, GRAY, (x, y, 5, 5))
+            pygame.draw.rect(self.screen, GRAY, (x + 10, y + 5, 5, 5))
+            pygame.draw.rect(self.screen, GRAY, (x - 5, y + 10, 5, 5))
+            return
+
         if 'cactus' in obs_type:
             # Dibuja el cactus principal
             pygame.draw.rect(self.screen, GRAY, (x, y, 20, height)) # Dibuja el primer cactus
@@ -120,6 +132,12 @@ class GameRenderer:
     def draw_cloud(self, cloud_state):
         """Dibuja una nube"""
         pygame.draw.ellipse(self.screen, GRAY, (cloud_state.x, cloud_state.y, cloud_state.width, cloud_state.height))
+
+    def draw_powerup(self, powerup_state):
+        """Dibuja el power-up."""
+        # Un simple cuadrado parpadeante para el power-up
+        if pygame.time.get_ticks() % 500 < 250:
+            pygame.draw.rect(self.screen, (255, 165, 0), (powerup_state.x, powerup_state.y, powerup_state.width, powerup_state.height))
 
     def draw_particles(self, particles, is_night):
         """Dibuja las partículas de polvo."""
@@ -202,6 +220,16 @@ class GameRenderer:
         pause_text = self.font.render("PAUSED", True, WHITE)
         self.screen.blit(pause_text, (width // 2 - 70, height // 2 - 30))
 
+    def draw_start_screen(self, width, height, high_score):
+        """Dibuja la pantalla de inicio."""
+        self.screen.fill(WHITE)
+        title_text = self.font.render("Dino Game", True, GRAY)
+        start_text = self.small_font.render("Press SPACE to Start", True, GRAY)
+        self.screen.blit(title_text, (width // 2 - 80, height // 2 - 60))
+        self.screen.blit(start_text, (width // 2 - 120, height // 2))
+        self.draw_score(0, high_score, width, False, False)
+        pygame.display.flip()
+
     def render(self, game_state):
         """Renderiza el estado completo del juego"""
         time_of_day = game_state['time_of_day']
@@ -236,6 +264,9 @@ class GameRenderer:
         self.draw_particles(game_state['particles'], is_night)
         for cloud_state in game_state['clouds']:
             self.draw_cloud(cloud_state)
+
+        for powerup_state in game_state['powerups']:
+            self.draw_powerup(powerup_state)
 
         self.draw_dino(game_state['dino'])
         
@@ -275,6 +306,8 @@ def main():
                 elif event.key == pygame.K_SPACE:
                     if game.game_over:
                         game.restart()
+                    elif not game.started:
+                        game.start_game()
                     else:
                         game.handle_jump()
                 elif event.key == pygame.K_UP and not game.game_over:
@@ -290,7 +323,10 @@ def main():
         
         # Renderizar
         game_state = game.get_game_state()
-        renderer.render(game_state)
+        if not game_state['started']:
+            renderer.draw_start_screen(WIDTH, HEIGHT, game_state['high_score'])
+        else:
+            renderer.render(game_state)
     
     pygame.quit()
     sys.exit()
