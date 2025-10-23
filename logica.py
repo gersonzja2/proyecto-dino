@@ -15,6 +15,7 @@ class Dino:
         self.gravity = 0.8
         self.anim_timer = 0
         self.anim_frame = 0
+        self.just_landed = False
         
     def jump(self):
         if not self.jumping:
@@ -32,6 +33,7 @@ class Dino:
             if self.y >= self.ground:
                 self.y = self.ground
                 self.jumping = False
+                self.just_landed = True # Bandera para indicar que acaba de aterrizar
                 self.vel_y = 0
         
         # Animación de carrera
@@ -40,14 +42,17 @@ class Dino:
             if self.anim_timer > 6: # Cambiar de frame cada 6 ticks
                 self.anim_frame = (self.anim_frame + 1) % 2
                 self.anim_timer = 0
+        else:
+            # Reiniciar la bandera si no está en el suelo
+            self.just_landed = False
                 
     def get_rect(self):
         if self.ducking and not self.jumping:
             return {
                 'x': self.x,
                 'y': self.y + 30,
-                'width': self.width + 20,
-                'height': self.height - 30
+                'width': 55, # Ancho ajustado para coincidir con el sprite agachado
+                'height': 30 # Altura ajustada
             }
         return {
             'x': self.x,
@@ -56,18 +61,6 @@ class Dino:
             'height': self.height
         }
     
-    def get_state(self):
-        """Retorna el estado completo del dinosaurio para renderizado"""
-        return {
-            'x': self.x,
-            'y': self.y,
-            'width': self.width,
-            'height': self.height,
-            'ducking': self.ducking,
-            'jumping': self.jumping,
-            'anim_frame': self.anim_frame
-        }
-
 
 class Obstacle:
     def __init__(self, x, obs_type, ground_y, speed=8):
@@ -84,6 +77,9 @@ class Obstacle:
             elif obs_type == 'cactus_group':
                 # Este será un grupo de cactus, el hitbox principal
                 self.width = 45 
+                self.height = 40
+            elif obs_type == 'cactus_triple':
+                self.width = 65 # Hitbox para tres cactus
                 self.height = 40
             self.y = ground_y + 60 - self.height # 60 es la altura del dino
         elif obs_type == 'bird':
@@ -115,18 +111,6 @@ class Obstacle:
             'height': self.height
         }
     
-    def get_state(self):
-        """Retorna el estado completo del obstáculo para renderizado"""
-        return {
-            'x': self.x,
-            'y': self.y,
-            'width': self.width,
-            'height': self.height,
-            'type': self.type,
-            # Añadir anim_frame solo si es un pájaro
-            'anim_frame': self.anim_frame if self.type in ['bird', 'pterodactyl'] else 0
-        }
-    
     def off_screen(self):
         return self.x < -50
 
@@ -141,15 +125,6 @@ class Cloud:
 
     def update(self):
         self.x -= self.speed
-
-    def get_state(self):
-        """Retorna el estado de la nube para renderizado"""
-        return {
-            'x': self.x,
-            'y': self.y,
-            'width': self.width,
-            'height': self.height
-        }
 
     def off_screen(self):
         return self.x < -self.width
@@ -167,13 +142,31 @@ class Ground:
         if self.x <= self.reset_point:
             self.x = 0
             
-    def get_state(self):
-        """Retorna el estado del suelo para renderizado"""
-        return {
-            'x': self.x,
-            'y': self.y
-        }
+class Particle:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.vx = random.uniform(-1, -0.5)
+        self.vy = random.uniform(-0.5, 0.5)
+        self.lifespan = random.randint(15, 30) # Duración en frames
+        self.size = random.randint(2, 4)
 
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        self.lifespan -= 1
+
+
+class Star:
+    def __init__(self, x, y, width, height):
+        self.x = random.randint(0, width)
+        self.y = random.randint(0, height // 2)
+        self.size = random.randint(1, 2)
+        self.blink_rate = random.randint(50, 150)
+        self.blink_timer = random.randint(0, self.blink_rate)
+
+    def update(self):
+        self.blink_timer = (self.blink_timer + 1) % self.blink_rate
 
 class GameEngine:
     def __init__(self, width=800, height=400, sounds=None):
@@ -192,6 +185,8 @@ class GameEngine:
         self.ground = Ground(height - 40, speed=self.speed)
         self.obstacles = []
         self.clouds = []
+        self.particles = []
+        self.stars = [Star(0, 0, width, height) for _ in range(50)] # Generar 50 estrellas
         self.score = 0
         self.game_over = False
         self.paused = False
@@ -244,6 +239,8 @@ class GameEngine:
         self.ground = new_game.ground
         self.obstacles = new_game.obstacles
         self.clouds = new_game.clouds
+        self.particles = []
+        self.stars = new_game.stars
         self.score = new_game.score
         self.game_over = new_game.game_over
         self.paused = new_game.paused
@@ -267,6 +264,12 @@ class GameEngine:
         # Actualizar dinosaurio
         self.dino.update()
         
+        # Generar partículas al aterrizar
+        if hasattr(self.dino, 'just_landed') and self.dino.just_landed:
+            for _ in range(10): # Explosión de partículas
+                self.particles.append(Particle(self.dino.x + 10, self.dino.y + self.dino.height))
+            self.dino.just_landed = False
+
         # Actualizar suelo
         self.ground.update()
         
@@ -284,11 +287,38 @@ class GameEngine:
             if cloud.off_screen():
                 self.clouds.remove(cloud)
 
+        # Generar partículas al correr
+        if not self.dino.jumping and not self.dino.ducking and self.dino.anim_timer % 4 == 0:
+            self.particles.append(Particle(self.dino.x, self.dino.y + self.dino.height))
+
+        # Actualizar partículas
+        for p in self.particles[:]:
+            p.update()
+            if p.lifespan <= 0:
+                self.particles.remove(p)
+
+        for star in self.stars:
+            star.update()
+
         # Generar obstáculos
         self.spawn_timer += 1
         if self.spawn_timer > self.spawn_interval:
-            obs_type = random.choice(['cactus_small', 'cactus_large', 'cactus_group', 'bird', 'pterodactyl'])
-            self.obstacles.append(Obstacle(self.width, obs_type, self.ground_y, speed=self.speed))
+            # Lógica de generación de obstáculos mejorada
+            choice = random.random()
+            if choice < 0.6: # 60% de probabilidad de cactus
+                obs_type = random.choice(['cactus_small', 'cactus_large', 'cactus_group', 'cactus_triple'])
+            elif choice < 0.85: # 25% de probabilidad de enemigos aéreos
+                obs_type = random.choice(['bird', 'pterodactyl'])
+            else: # 15% de probabilidad de grupos de pájaros
+                num_birds = random.choice([2, 3])
+                for i in range(num_birds):
+                    # Añade pájaros con un pequeño desfase para que no estén superpuestos
+                    bird_x = self.width + (i * 80)
+                    self.obstacles.append(Obstacle(bird_x, 'bird', self.ground_y, speed=self.speed))
+                obs_type = None # No generar un obstáculo adicional
+
+            if obs_type:
+                self.obstacles.append(Obstacle(self.width, obs_type, self.ground_y, speed=self.speed))
             self.spawn_timer = 0
             self.spawn_interval = random.randint(60, 120)
             
@@ -323,10 +353,12 @@ class GameEngine:
     def get_game_state(self):
         """Retorna el estado completo del juego para renderizado"""
         return {
-            'dino': self.dino.get_state(),
-            'ground': self.ground.get_state(),
-            'obstacles': [obs.get_state() for obs in self.obstacles],
-            'clouds': [cloud.get_state() for cloud in self.clouds],
+            'dino': self.dino,
+            'ground': self.ground,
+            'obstacles': self.obstacles,
+            'clouds': self.clouds,
+            'particles': self.particles,
+            'stars': self.stars,
             'score': self.score,
             'high_score': self.high_score,
             'new_high_score_achieved': self.new_high_score_achieved,

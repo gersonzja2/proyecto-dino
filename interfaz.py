@@ -3,6 +3,7 @@ import pygame
 import numpy as np
 import sys
 from logica import GameEngine
+import random
 
 pygame.init()
 pygame.mixer.init() # Inicializar el mezclador de audio
@@ -56,17 +57,11 @@ class GameRenderer:
         self.blink_timer = 0
         
     def draw_dino(self, dino_state):
-        """Dibuja el dinosaurio basado en su estado"""
-        x = dino_state['x']
-        y = dino_state['y']
-        width = dino_state['width']
-        height = dino_state['height']
-        ducking = dino_state['ducking']
-        jumping = dino_state['jumping']
-        anim_frame = dino_state['anim_frame']
+        """Dibuja el dinosaurio basado en su objeto de estado"""
+        x, y, width, height = dino_state.x, dino_state.y, dino_state.width, dino_state.height
         
         # El cuerpo del dinosaurio se dibuja con varios rectángulos para darle forma
-        if ducking and not jumping:
+        if dino_state.ducking and not dino_state.jumping:
             # Dinosaurio agachado
             pygame.draw.rect(self.screen, GRAY, (x, y + 30, 55, 30)) # Cuerpo
             pygame.draw.rect(self.screen, GRAY, (x + 55, y + 30, 20, 20)) # Cabeza
@@ -76,7 +71,7 @@ class GameRenderer:
             pygame.draw.rect(self.screen, GRAY, (x, y + 20, 30, 40)) # Cuerpo
             pygame.draw.rect(self.screen, GRAY, (x - 10, y + 40, 10, 10)) # Cola
             # Animación de piernas
-            if anim_frame == 0:
+            if dino_state.anim_frame == 0:
                 pygame.draw.rect(self.screen, GRAY, (x + 5, y + 60, 10, 10)) # Pierna trasera
                 pygame.draw.rect(self.screen, GRAY, (x + 20, y + 55, 10, 15)) # Pierna delantera
             else:
@@ -88,28 +83,28 @@ class GameRenderer:
 
             
     def draw_obstacle(self, obs_state):
-        """Dibuja un obstáculo basado en su estado"""
-        x = obs_state['x']
-        y = obs_state['y']
-        width = obs_state['width']
-        height = obs_state['height']
-        obs_type = obs_state['type']
-        anim_frame = obs_state.get('anim_frame', 0)
+        """Dibuja un obstáculo basado en su objeto de estado"""
+        x, y, width, height = obs_state.x, obs_state.y, obs_state.width, obs_state.height
+        obs_type = obs_state.type
         
         if 'cactus' in obs_type:
             # Dibuja el cactus principal
-            pygame.draw.rect(self.screen, GRAY, (x, y, width, height))
+            pygame.draw.rect(self.screen, GRAY, (x, y, 20, height)) # Dibuja el primer cactus
             # Dibuja detalles adicionales según el tipo
             if obs_type == 'cactus_large':
                 pygame.draw.rect(self.screen, GRAY, (x - 8, y + 10, 10, 15)) # Brazo izquierdo
-            if obs_type == 'cactus_group':
+            elif obs_type == 'cactus_group':
                 # Dibuja un segundo cactus más pequeño al lado
                 pygame.draw.rect(self.screen, GRAY, (x + 25, y + 10, 15, 30))
+            elif obs_type == 'cactus_triple':
+                pygame.draw.rect(self.screen, GRAY, (x + 22, y, 20, height)) # Segundo cactus
+                pygame.draw.rect(self.screen, GRAY, (x + 44, y, 20, height)) # Tercer cactus
+
         elif obs_type == 'bird':
             # Pájaro
             pygame.draw.ellipse(self.screen, GRAY, (x, y, width, height))
             # Animación de alas
-            if anim_frame == 0: # Alas arriba
+            if obs_state.anim_frame == 0: # Alas arriba
                 pygame.draw.polygon(self.screen, GRAY, [(x + 10, y + 5), (x + 30, y + 5), (x + 20, y - 5)])
             else: # Alas abajo
                 pygame.draw.polygon(self.screen, GRAY, [(x + 10, y + 10), (x + 30, y + 10), (x + 20, y + 20)])
@@ -117,18 +112,31 @@ class GameRenderer:
             # Cuerpo y cabeza
             pygame.draw.polygon(self.screen, GRAY, [(x, y + 10), (x + 20, y + 10), (x + 30, y), (x + 45, y + 5)])
             # Animación de alas
-            if anim_frame == 0: # Alas arriba
+            if obs_state.anim_frame == 0: # Alas arriba
                 pygame.draw.polygon(self.screen, GRAY, [(x + 10, y + 10), (x + 30, y), (x + 40, y)])
             else: # Alas abajo
                 pygame.draw.polygon(self.screen, GRAY, [(x + 10, y + 10), (x + 30, y + 20), (x + 40, y + 20)])
             
     def draw_cloud(self, cloud_state):
         """Dibuja una nube"""
-        x = cloud_state['x']
-        y = cloud_state['y']
-        width = cloud_state['width']
-        height = cloud_state['height']
-        pygame.draw.ellipse(self.screen, GRAY, (x, y, width, height))
+        pygame.draw.ellipse(self.screen, GRAY, (cloud_state.x, cloud_state.y, cloud_state.width, cloud_state.height))
+
+    def draw_particles(self, particles, is_night):
+        """Dibuja las partículas de polvo."""
+        particle_color = (120, 120, 120) if not is_night else (180, 180, 180)
+        for p in particles:
+            pygame.draw.circle(self.screen, particle_color, (p.x, p.y), p.size)
+
+    def draw_stars(self, stars):
+        """Dibuja las estrellas en el cielo nocturno."""
+        for star in stars:
+            # La visibilidad se calcula aquí en la interfaz
+            is_visible = star.blink_timer < 5
+            if is_visible:
+                # El color parpadea ligeramente
+                brightness = random.randint(180, 255)
+                color = (brightness, brightness, brightness)
+                pygame.draw.circle(self.screen, color, (star.x, star.y), star.size)
 
     def draw_sun_and_moon(self, time_of_day, cycle_duration, width, height):
         """Dibuja el sol o la luna según la hora del día."""
@@ -152,8 +160,8 @@ class GameRenderer:
 
     def draw_ground(self, ground_state, width):
         """Dibuja el suelo basado en su estado"""
-        x = ground_state['x']
-        y = ground_state['y']
+        x = ground_state.x
+        y = ground_state.y
         
         # Línea del suelo
         pygame.draw.line(self.screen, GRAY, (0, y), (width, y), 3)
@@ -215,10 +223,17 @@ class GameRenderer:
         # Limpiar pantalla
         self.screen.fill(bg_color)
         
+        is_night = 0.55 <= progress < 0.95
+
+        # Dibujar estrellas si es de noche
+        if is_night:
+            self.draw_stars(game_state['stars'])
+
         # Dibujar elementos
         self.draw_sun_and_moon(time_of_day, cycle_duration, game_state['width'], game_state['height'])
         self.draw_ground(game_state['ground'], game_state['width'])
         
+        self.draw_particles(game_state['particles'], is_night)
         for cloud_state in game_state['clouds']:
             self.draw_cloud(cloud_state)
 
@@ -227,7 +242,6 @@ class GameRenderer:
         for obs_state in game_state['obstacles']:
             self.draw_obstacle(obs_state)
             
-        is_night = 0.55 <= progress < 0.95
         self.draw_score(game_state['score'], game_state['high_score'], game_state['width'], game_state['new_high_score_achieved'], is_night)
         
         if game_state['game_over']:
@@ -254,7 +268,9 @@ def main():
                 running = False
                 
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_p:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_p:
                     game.toggle_pause()
                 elif event.key == pygame.K_SPACE:
                     if game.game_over:
