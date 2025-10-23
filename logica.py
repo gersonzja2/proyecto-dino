@@ -60,19 +60,26 @@ class Dino:
 
 
 class Obstacle:
-    def __init__(self, x, obs_type, speed=8):
+    def __init__(self, x, obs_type, ground_y, speed=8):
         self.x = x
         self.type = obs_type
         self.speed = speed
         
-        if obs_type == 'cactus':
+        if 'cactus' in obs_type:
             self.width = 20
-            self.height = random.choice([40, 50, 60])
-            self.y = 300 - self.height  # ground_y - height
+            if obs_type == 'cactus_small':
+                self.height = 40
+            elif obs_type == 'cactus_large':
+                self.height = 60
+            elif obs_type == 'cactus_group':
+                # Este será un grupo de cactus, el hitbox principal
+                self.width = 45 
+                self.height = 40
+            self.y = ground_y + 60 - self.height # 60 es la altura del dino
         else:  # bird
             self.width = 40
             self.height = 30
-            self.y = 300 - random.choice([60, 80, 100])
+            self.y = ground_y - random.choice([0, 20, 40]) # Varias alturas para el pájaro
             
     def update(self):
         self.x -= self.speed
@@ -120,10 +127,12 @@ class Ground:
 
 
 class GameEngine:
-    def __init__(self, width=800, height=400):
+    def __init__(self, width=800, height=400, sounds=None):
         self.width = width
         self.height = height
         self.ground_y = height - 100
+        
+        self.sounds = sounds if sounds is not None else {}
         
         self.dino = Dino(50, self.ground_y)
         self.ground = Ground(height - 40)
@@ -131,11 +140,12 @@ class GameEngine:
         self.score = 0
         self.game_over = False
         self.spawn_timer = 0
-        self.spawn_min = 60
-        self.spawn_max = 120
+        self.spawn_interval = random.randint(60, 120)
         
     def handle_jump(self):
         if not self.game_over:
+            if self.sounds.get('jump') and not self.dino.jumping:
+                self.sounds['jump'].play()
             self.dino.jump()
             
     def handle_duck(self, ducking):
@@ -143,12 +153,13 @@ class GameEngine:
             self.dino.duck(ducking)
             
     def restart(self):
-        self.dino = Dino(50, self.ground_y)
-        self.ground = Ground(self.height - 40)
-        self.obstacles = []
-        self.score = 0
-        self.game_over = False
-        self.spawn_timer = 0
+        """Reinicia el estado del juego."""
+        new_game = GameEngine(self.width, self.height, self.sounds)
+        self.dino = new_game.dino
+        self.ground = new_game.ground
+        self.obstacles = new_game.obstacles
+        self.score = new_game.score
+        self.game_over = new_game.game_over
         
     def check_collision(self, rect1, rect2):
         """Verifica colisión entre dos rectángulos"""
@@ -169,21 +180,27 @@ class GameEngine:
         
         # Generar obstáculos
         self.spawn_timer += 1
-        if self.spawn_timer > random.randint(self.spawn_min, self.spawn_max):
-            obs_type = random.choice(['cactus', 'cactus', 'cactus', 'bird'])
-            self.obstacles.append(Obstacle(self.width, obs_type))
+        if self.spawn_timer > self.spawn_interval:
+            obs_type = random.choice(['cactus_small', 'cactus_large', 'cactus_group', 'bird'])
+            self.obstacles.append(Obstacle(self.width, obs_type, self.ground_y))
             self.spawn_timer = 0
+            self.spawn_interval = random.randint(60, 120)
             
         # Actualizar obstáculos
         for obs in self.obstacles[:]:
             obs.update()
             if obs.off_screen():
                 self.obstacles.remove(obs)
-                self.score += 1
+                if not self.game_over:
+                    self.score += 1
+                    if self.sounds.get('point'):
+                        self.sounds['point'].play()
                 
             # Verificar colisión
             if self.check_collision(self.dino.get_rect(), obs.get_rect()):
                 self.game_over = True
+                if self.sounds.get('die'):
+                    self.sounds['die'].play()
                 
     def get_game_state(self):
         """Retorna el estado completo del juego para renderizado"""

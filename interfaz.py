@@ -1,9 +1,11 @@
 # game_view.py
 import pygame
+import numpy as np
 import sys
 from logica import GameEngine
 
 pygame.init()
+pygame.mixer.init() # Inicializar el mezclador de audio
 
 # Configuración de pantalla
 WIDTH, HEIGHT = 800, 400
@@ -18,6 +20,30 @@ GRAY = (83, 83, 83)
 # FPS
 clock = pygame.time.Clock()
 FPS = 60
+
+def generate_sound(frequency=440, duration=0.1, volume=0.1):
+    """Genera un sonido simple y lo devuelve como un objeto pygame.mixer.Sound."""
+    sample_rate = pygame.mixer.get_init()[0]
+    n_samples = int(round(duration * sample_rate))
+    
+    # Generar la onda de sonido
+    buf = np.zeros((n_samples, 2), dtype=np.int16)
+    max_sample = 2**(16 - 1) - 1
+    
+    t = np.linspace(0., duration, n_samples, endpoint=False)
+    wave = np.sin(2 * np.pi * frequency * t)
+    
+    # Aplicar volumen y convertir a formato de 16 bits
+    buf[:,0] = (wave * max_sample * volume).astype(np.int16)
+    buf[:,1] = buf[:,0] # Sonido estéreo
+    
+    return pygame.sndarray.make_sound(buf)
+
+# Generar sonidos en lugar de cargarlos desde archivos
+jump_sound = generate_sound(660, 0.05, 0.1)  # Tono agudo y corto
+point_sound = generate_sound(880, 0.05, 0.08) # Tono más agudo para puntos
+die_sound = generate_sound(220, 0.2, 0.15)   # Tono grave y más largo
+game_sounds = {"jump": jump_sound, "point": point_sound, "die": die_sound}
 
 
 class GameRenderer:
@@ -35,16 +61,22 @@ class GameRenderer:
         ducking = dino_state['ducking']
         jumping = dino_state['jumping']
         
+        # El cuerpo del dinosaurio se dibuja con varios rectángulos para darle forma
         if ducking and not jumping:
             # Dinosaurio agachado
-            pygame.draw.rect(self.screen, GRAY, (x, y + 30, width + 20, height - 30))
+            pygame.draw.rect(self.screen, GRAY, (x, y + 30, 55, 30)) # Cuerpo
+            pygame.draw.rect(self.screen, GRAY, (x + 55, y + 30, 20, 20)) # Cabeza
+            pygame.draw.rect(self.screen, BLACK, (x + 65, y + 35, 5, 5)) # Ojo
         else:
-            # Cuerpo
-            pygame.draw.rect(self.screen, GRAY, (x, y, width, height))
-            # Cabeza
-            pygame.draw.rect(self.screen, GRAY, (x + 30, y - 10, 20, 20))
-            # Ojo
-            pygame.draw.rect(self.screen, BLACK, (x + 40, y - 5, 5, 5))
+            # Dinosaurio de pie
+            pygame.draw.rect(self.screen, GRAY, (x, y + 20, 30, 40)) # Cuerpo
+            pygame.draw.rect(self.screen, GRAY, (x - 10, y + 40, 10, 10)) # Cola
+            pygame.draw.rect(self.screen, GRAY, (x + 5, y + 60, 10, 10)) # Pierna trasera
+            pygame.draw.rect(self.screen, GRAY, (x + 20, y + 60, 10, 10)) # Pierna delantera
+            pygame.draw.rect(self.screen, GRAY, (x + 20, y + 25, 10, 5)) # Brazo
+            pygame.draw.rect(self.screen, GRAY, (x + 25, y, 25, 25)) # Cabeza
+            pygame.draw.rect(self.screen, BLACK, (x + 40, y + 5, 5, 5)) # Ojo
+
             
     def draw_obstacle(self, obs_state):
         """Dibuja un obstáculo basado en su estado"""
@@ -54,11 +86,15 @@ class GameRenderer:
         height = obs_state['height']
         obs_type = obs_state['type']
         
-        if obs_type == 'cactus':
-            # Cactus
+        if 'cactus' in obs_type:
+            # Dibuja el cactus principal
             pygame.draw.rect(self.screen, GRAY, (x, y, width, height))
-            pygame.draw.rect(self.screen, GRAY, (x - 8, y + 10, 10, 15))
-            pygame.draw.rect(self.screen, GRAY, (x + width - 2, y + 15, 10, 15))
+            # Dibuja detalles adicionales según el tipo
+            if obs_type == 'cactus_large':
+                pygame.draw.rect(self.screen, GRAY, (x - 8, y + 10, 10, 15)) # Brazo izquierdo
+            if obs_type == 'cactus_group':
+                # Dibuja un segundo cactus más pequeño al lado
+                pygame.draw.rect(self.screen, GRAY, (x + 25, y + 10, 15, 30))
         else:  # bird
             # Pájaro
             pygame.draw.ellipse(self.screen, GRAY, (x, y, width, height))
@@ -114,8 +150,8 @@ class GameRenderer:
 
 
 def main():
-    # Inicializar motor del juego y renderizador
-    game = GameEngine(WIDTH, HEIGHT)
+    # Inicializar motor del juego (con sonidos) y renderizador
+    game = GameEngine(WIDTH, HEIGHT, game_sounds)
     renderer = GameRenderer(screen)
     
     running = True
