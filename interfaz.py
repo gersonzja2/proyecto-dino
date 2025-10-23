@@ -104,6 +104,14 @@ class GameRenderer:
                 (x - 10, y + 20)
             ])
             
+    def draw_cloud(self, cloud_state):
+        """Dibuja una nube"""
+        x = cloud_state['x']
+        y = cloud_state['y']
+        width = cloud_state['width']
+        height = cloud_state['height']
+        pygame.draw.ellipse(self.screen, GRAY, (x, y, width, height))
+
     def draw_ground(self, ground_state, width):
         """Dibuja el suelo basado en su estado"""
         x = ground_state['x']
@@ -135,6 +143,10 @@ class GameRenderer:
         
         # Dibujar elementos
         self.draw_ground(game_state['ground'], game_state['width'])
+        
+        for cloud_state in game_state['clouds']:
+            self.draw_cloud(cloud_state)
+
         self.draw_dino(game_state['dino'])
         
         for obs_state in game_state['obstacles']:

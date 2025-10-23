@@ -106,6 +106,30 @@ class Obstacle:
         return self.x < -50
 
 
+class Cloud:
+    def __init__(self, x, y, speed=2):
+        self.x = x
+        self.y = y
+        self.speed = speed
+        self.width = random.randint(40, 80)
+        self.height = random.randint(15, 30)
+
+    def update(self):
+        self.x -= self.speed
+
+    def get_state(self):
+        """Retorna el estado de la nube para renderizado"""
+        return {
+            'x': self.x,
+            'y': self.y,
+            'width': self.width,
+            'height': self.height
+        }
+
+    def off_screen(self):
+        return self.x < -self.width
+
+
 class Ground:
     def __init__(self, y=360, speed=8):
         self.x = 0
@@ -131,15 +155,22 @@ class GameEngine:
         self.width = width
         self.height = height
         self.ground_y = height - 100
+        self.speed = 8
+        self.speed_increase_interval = 10 # Aumentar velocidad cada 10 puntos
+        self.next_speed_increase_score = self.speed_increase_interval
         
         self.sounds = sounds if sounds is not None else {}
         
         self.dino = Dino(50, self.ground_y)
-        self.ground = Ground(height - 40)
+        self.ground = Ground(height - 40, speed=self.speed)
         self.obstacles = []
+        self.clouds = []
         self.score = 0
         self.game_over = False
+        
         self.spawn_timer = 0
+        self.cloud_spawn_timer = 0
+        self.cloud_spawn_interval = random.randint(120, 240)
         self.spawn_interval = random.randint(60, 120)
         
     def handle_jump(self):
@@ -158,6 +189,7 @@ class GameEngine:
         self.dino = new_game.dino
         self.ground = new_game.ground
         self.obstacles = new_game.obstacles
+        self.clouds = new_game.clouds
         self.score = new_game.score
         self.game_over = new_game.game_over
         
@@ -178,11 +210,25 @@ class GameEngine:
         # Actualizar suelo
         self.ground.update()
         
+        # Generar nubes
+        self.cloud_spawn_timer += 1
+        if self.cloud_spawn_timer > self.cloud_spawn_interval:
+            cloud_y = random.randint(50, 150)
+            self.clouds.append(Cloud(self.width, cloud_y))
+            self.cloud_spawn_timer = 0
+            self.cloud_spawn_interval = random.randint(120, 300)
+
+        # Actualizar nubes
+        for cloud in self.clouds[:]:
+            cloud.update()
+            if cloud.off_screen():
+                self.clouds.remove(cloud)
+
         # Generar obstáculos
         self.spawn_timer += 1
         if self.spawn_timer > self.spawn_interval:
             obs_type = random.choice(['cactus_small', 'cactus_large', 'cactus_group', 'bird'])
-            self.obstacles.append(Obstacle(self.width, obs_type, self.ground_y))
+            self.obstacles.append(Obstacle(self.width, obs_type, self.ground_y, speed=self.speed))
             self.spawn_timer = 0
             self.spawn_interval = random.randint(60, 120)
             
@@ -195,6 +241,12 @@ class GameEngine:
                     self.score += 1
                     if self.sounds.get('point'):
                         self.sounds['point'].play()
+
+                    # Aumentar velocidad
+                    if self.score >= self.next_speed_increase_score:
+                        self.speed += 0.5
+                        self.ground.speed = self.speed
+                        self.next_speed_increase_score += self.speed_increase_interval
                 
             # Verificar colisión
             if self.check_collision(self.dino.get_rect(), obs.get_rect()):
@@ -208,6 +260,7 @@ class GameEngine:
             'dino': self.dino.get_state(),
             'ground': self.ground.get_state(),
             'obstacles': [obs.get_state() for obs in self.obstacles],
+            'clouds': [cloud.get_state() for cloud in self.clouds],
             'score': self.score,
             'game_over': self.game_over,
             'width': self.width,
